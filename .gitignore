@@ -7,12 +7,12 @@ node_modules/
 .env.*
 !.env.example
 
-# Build files
+# Production build files
 dist/
 build/
 coverage/
 
-# Logs
+# Log files
 *.log
 npm-debug.log*
 
