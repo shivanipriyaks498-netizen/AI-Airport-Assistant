@@ -1,0 +1,25 @@
+
+# Dependencies
+node_modules/
+
+# Private environment files
+.env
+.env.*
+!.env.example
+
+# Build files
+dist/
+build/
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Postman local files
+.postman/
+postman/

@@ -1,0 +1,21 @@
+
+# Dependencies
+node_modules/
+
+# Private environment files and API keys
+.env
+.env.*
+!.env.example
+
+# Production build files
+dist/
+build/
+coverage/
+
+# Log files
+*.log
+npm-debug.log*
+
+# Operating system files
+.DS_Store
+Thumbs.db
