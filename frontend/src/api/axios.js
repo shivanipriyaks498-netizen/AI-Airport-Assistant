@@ -1,9 +1,11 @@
+
 import axios from "axios";
 
 const API = axios.create({
-  baseURL: "http://localhost:5000/api",
+  baseURL: import.meta.env.DEV
+    ? "http://localhost:5000/api"
+    : "https://ai-airport-assistant.onrender.com/api",
 
-  // Allow 35 seconds for the backend to respond
   timeout: 35000,
 
   headers: {
@@ -11,7 +13,6 @@ const API = axios.create({
   }
 });
 
-// Attach login token automatically
 API.interceptors.request.use(
   (config) => {
     const token = sessionStorage.getItem("token");
