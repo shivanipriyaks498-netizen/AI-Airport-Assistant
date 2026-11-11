@@ -9,7 +9,7 @@ function Footer() {
       </p>
 
       <p>
-        © 2026 AI Airport Assistant.
+        © 2026 BCA AIMS AI Airport Assistant.
         All Rights Reserved.
       </p>
     </footer>
