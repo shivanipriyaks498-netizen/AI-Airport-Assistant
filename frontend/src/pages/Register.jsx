@@ -7,7 +7,6 @@ import API from "../api/axios";
 function Register() {
   const navigate = useNavigate();
 
-  // Store form values
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -17,7 +16,6 @@ function Register() {
 
   const [loading, setLoading] = useState(false);
 
-  // Update form values
   const handleChange = (e) => {
     setFormData({
       ...formData,
@@ -25,11 +23,9 @@ function Register() {
     });
   };
 
-  // Submit registration form
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Check passwords
     if (formData.password !== formData.confirmPassword) {
       toast.error("Passwords do not match!");
       return;
@@ -43,24 +39,20 @@ function Register() {
     try {
       setLoading(true);
 
-      // Send registration details to backend
-      const response = await API.post("/auth/register", {
+      await API.post("/auth/register", {
         name: formData.name,
         email: formData.email,
         password: formData.password
       });
 
-      // Save login token for this browser session
-      sessionStorage.setItem("token", response.data.token);
-      sessionStorage.setItem(
-        "user",
-        JSON.stringify(response.data.user)
-      );
+      // Do not automatically log in after registration
+      sessionStorage.removeItem("token");
+      sessionStorage.removeItem("user");
 
-      toast.success("Registration successful!");
+      toast.success("Registration successful! Please log in.");
 
-      // Open dashboard
-      navigate("/dashboard");
+      // Send the user to the Login page
+      navigate("/login", { replace: true });
 
     } catch (error) {
       const message =

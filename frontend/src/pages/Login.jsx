@@ -44,11 +44,18 @@ function Login() {
 
       toast.success("Login successful!");
 
-      navigate("/dashboard");
+      if (response.data.user.role === "admin") {
+        navigate("/admin");
+      } else {
+        navigate("/dashboard");
+      }
 
     } catch (error) {
+      console.error("Login Error:", error);
+
       const message =
         error.response?.data?.message ||
+        error.message ||
         "Unable to log in. Please try again.";
 
       toast.error(message);

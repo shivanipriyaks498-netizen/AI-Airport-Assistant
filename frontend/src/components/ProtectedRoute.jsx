@@ -1,11 +1,25 @@
 
 import { Navigate, Outlet } from "react-router-dom";
 
-function ProtectedRoute() {
+function ProtectedRoute({ adminOnly = false }) {
   const token = sessionStorage.getItem("token");
 
-  if (!token) {
+  const storedUser = sessionStorage.getItem("user");
+
+  let user = null;
+
+  try {
+    user = storedUser ? JSON.parse(storedUser) : null;
+  } catch {
+    user = null;
+  }
+
+  if (!token || !user) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (adminOnly && user.role !== "admin") {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <Outlet />;

@@ -1,9 +1,39 @@
 
-import Chatbot from "../components/Chatbot";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import API from "../api/axios";
+
+const flightData = [
+  {
+    number: "AI 202",
+    airline: "Air India",
+    route: "DEL → BLR",
+    status: "On Time",
+    time: "10:30 AM"
+  },
+  {
+    number: "6E 451",
+    airline: "IndiGo",
+    route: "BLR → BOM",
+    status: "Boarding",
+    time: "11:15 AM"
+  },
+  {
+    number: "UK 820",
+    airline: "Vistara",
+    route: "BLR → DEL",
+    status: "Scheduled",
+    time: "12:00 PM"
+  },
+  {
+    number: "SG 415",
+    airline: "SpiceJet",
+    route: "HYD → BLR",
+    status: "On Time",
+    time: "12:45 PM"
+  }
+];
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -32,16 +62,39 @@ function Dashboard() {
     fetchUser();
   }, [navigate]);
 
-  const handleLogout = () => {
-    sessionStorage.removeItem("token");
-    sessionStorage.removeItem("user");
-
-    toast.success("Logged out successfully!");
-    navigate("/login", { replace: true });
-  };
+  const services = [
+    {
+      icon: "✈️",
+      title: "Flight Search",
+      description: "Search flights and explore flight information.",
+      path: "/flights"
+    },
+    {
+      icon: "🤖",
+      title: "AI Assistant",
+      description: "Get smart answers to your travel questions.",
+      path: "/assistant"
+    },
+    {
+      icon: "🗺️",
+      title: "Airport Navigation",
+      description: "Find gates and important airport locations.",
+      path: "/navigation"
+    },
+    {
+      icon: "🧳",
+      title: "Baggage Assistance",
+      description: "Get help with baggage-related problems.",
+      path: "/baggage"
+    }
+  ];
 
   if (loading) {
-    return <div className="dashboard-loading">Verifying your account...</div>;
+    return (
+      <div className="dashboard-loading">
+        Verifying your account...
+      </div>
+    );
   }
 
   if (!user) {
@@ -51,89 +104,151 @@ function Dashboard() {
   return (
     <div className="dashboard-page">
 
-      <header className="dashboard-header">
-        <h2>✈️ AI Airport Assistant</h2>
+      {/* DASHBOARD HERO SECTION */}
+      <section className="dashboard-hero">
 
-        <button onClick={handleLogout}>
-          Logout
-        </button>
-      </header>
+        <div className="dashboard-hero-content">
 
-      <div className="dashboard-welcome">
-        <h1>Welcome, {user.name}!</h1>
+          <span className="dashboard-tag">
+            YOUR SMART TRAVEL COMPANION
+          </span>
 
-        <p>Your smart travel companion is ready.</p>
+          <h1>
+            Welcome, <span>{user.name}</span>
+          </h1>
 
-        <p className="dashboard-email">
-          Logged in as: {user.email}
+          <p>
+            Experience smarter travel with AI-powered flight
+            assistance, airport navigation and baggage support.
+          </p>
+
+          <div className="dashboard-hero-buttons">
+
+            <button onClick={() => navigate("/flights")}>
+              Explore Flights →
+            </button>
+
+            <button
+              className="dashboard-secondary-button"
+              onClick={() => navigate("/assistant")}
+            >
+              Meet AI Assistant
+            </button>
+
+          </div>
+
+          <div className="dashboard-user-info">
+            Logged in as: {user.email}
+          </div>
+
+        </div>
+
+      </section>
+
+      {/* FLIGHT INFORMATION SECTION */}
+      <section className="dashboard-flights-section">
+
+        <div className="dashboard-section-heading">
+          <span>FLIGHT INFORMATION</span>
+          <h2>Flights at a Glance</h2>
+          <p>
+            Explore sample flight information from our dashboard.
+          </p>
+        </div>
+
+        <div className="flight-ticker">
+
+          <div className="flight-ticker-track">
+
+            {[...flightData, ...flightData].map((flight, index) => (
+
+              <div className="dashboard-flight-card" key={index}>
+
+                <div className="dashboard-flight-top">
+
+                  <strong>{flight.number}</strong>
+
+                  <span
+                    className={`dashboard-flight-status ${flight.status
+                      .toLowerCase()
+                      .replace(" ", "-")}`}
+                  >
+                    {flight.status}
+                  </span>
+
+                </div>
+
+                <p>{flight.airline}</p>
+
+                <h3>{flight.route}</h3>
+
+                <small>Departure: {flight.time}</small>
+
+              </div>
+
+            ))}
+
+          </div>
+
+        </div>
+
+        <p className="dashboard-demo-note">
+          * Sample flight information for demonstration only.
+          Check Flight Search for available live flight information.
         </p>
-      </div>
 
-      <div className="dashboard-grid">
+      </section>
 
-        <div
-          className="dashboard-card"
-          onClick={() => navigate("/flights")}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") navigate("/flights");
-          }}
-        >
-          <h2>✈️</h2>
-          <h3>Flight Search</h3>
-          <p>Search and explore your flights.</p>
-          <span>Open →</span>
+      {/* AIRPORT SERVICES SECTION */}
+      <section className="dashboard-services">
+
+        <div className="dashboard-section-heading">
+
+          <span>EXPLORE OUR SERVICES</span>
+
+          <h2>Everything You Need for Your Journey</h2>
+
+          <p>
+            Choose a service to make your airport experience easier.
+          </p>
+
         </div>
 
-        <div
-          className="dashboard-card"
-          onClick={() => navigate("/assistant")}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") navigate("/assistant");
-          }}
-        >
-          <h2>🤖</h2>
-          <h3>AI Assistant</h3>
-          <p>Get instant travel assistance.</p>
-          <span>Open →</span>
+        <div className="dashboard-grid">
+
+          {services.map((service) => (
+
+            <div
+              className="dashboard-card"
+              key={service.title}
+              onClick={() => navigate(service.path)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  navigate(service.path);
+                }
+              }}
+            >
+
+              <div className="dashboard-card-icon">
+                {service.icon}
+              </div>
+
+              <h3>{service.title}</h3>
+
+              <p>{service.description}</p>
+
+              <span>Explore Service →</span>
+
+            </div>
+
+          ))}
+
         </div>
 
-        <div
-          className="dashboard-card"
-          onClick={() => navigate("/navigation")}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") navigate("/navigation");
-          }}
-        >
-          <h2>🗺️</h2>
-          <h3>Airport Navigation</h3>
-          <p>Explore airport terminals.</p>
-          <span>Open →</span>
-        </div>
-
-        <div
-          className="dashboard-card"
-          onClick={() => navigate("/baggage")}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") navigate("/baggage");
-          }}
-        >
-          <h2>🧳</h2>
-          <h3>Baggage Assistance</h3>
-          <p>Get baggage-related support.</p>
-          <span>Open →</span>
-        </div>
-
-      </div>
-
-      <Chatbot />
+      </section>
 
     </div>
   );

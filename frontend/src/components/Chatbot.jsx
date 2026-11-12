@@ -1,6 +1,14 @@
+
 import { useEffect, useRef, useState } from "react";
 import API from "../api/axios";
 import toast from "react-hot-toast";
+
+const quickQuestions = [
+  "How can I check my flight status?",
+  "What should I do if my baggage is lost?",
+  "How early should I reach the airport?",
+  "Where can I find my boarding gate?",
+];
 
 function Chatbot() {
   const [isOpen, setIsOpen] = useState(false);
@@ -8,15 +16,15 @@ function Chatbot() {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      text: "Hello! 👋 Welcome to AI Airport Assistant. How can I help you today?"
-    }
+      text: "Hello! 👋 Welcome to AI Airport Assistant. How can I help you today?",
+    },
   ]);
 
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
 
-  // Load previous conversation from MongoDB
+  // Load previous conversation
   useEffect(() => {
     const loadHistory = async () => {
       try {
@@ -40,35 +48,27 @@ function Chatbot() {
     loadHistory();
   }, []);
 
-  // Scroll to latest message
+  // Scroll to the latest message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
-      behavior: "smooth"
+      behavior: "smooth",
     });
   }, [messages, loading]);
 
-  // Send message to backend
-  const handleSend = async (e) => {
-    e.preventDefault();
+  // Send a message to the backend
+  const sendMessage = async (messageText) => {
+    const userMessage = messageText.trim();
 
-    const userMessage = input.trim();
-
-    if (!userMessage || loading) {
-      return;
-    }
+    if (!userMessage || loading) return;
 
     if (userMessage.length > 1000) {
       toast.error("Message cannot exceed 1000 characters.");
       return;
     }
 
-    // Show user message immediately
     setMessages((previous) => [
       ...previous,
-      {
-        role: "user",
-        text: userMessage
-      }
+      { role: "user", text: userMessage },
     ]);
 
     setInput("");
@@ -76,7 +76,7 @@ function Chatbot() {
 
     try {
       const response = await API.post("/chat/message", {
-        message: userMessage
+        message: userMessage,
       });
 
       if (!response.data.success || !response.data.reply) {
@@ -85,15 +85,13 @@ function Chatbot() {
         );
       }
 
-      // Show assistant response
       setMessages((previous) => [
         ...previous,
         {
           role: "assistant",
-          text: response.data.reply
-        }
+          text: response.data.reply,
+        },
       ]);
-
     } catch (error) {
       console.error("Chat request failed:", error);
 
@@ -101,11 +99,9 @@ function Chatbot() {
         "Unable to send your message. Please try again.";
 
       if (error.code === "ECONNABORTED") {
-        errorMessage =
-          "The request took too long. Please try again.";
+        errorMessage = "The request took too long. Please try again.";
       } else if (error.response?.status === 401) {
-        errorMessage =
-          "Your login session has expired. Please log in again.";
+        errorMessage = "Your login session has expired. Please log in again.";
       } else if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
       } else if (error.message) {
@@ -118,13 +114,18 @@ function Chatbot() {
         ...previous,
         {
           role: "assistant",
-          text: errorMessage
-        }
+          text: errorMessage,
+        },
       ]);
-
     } finally {
       setLoading(false);
     }
+  };
+
+  // Handle form submission
+  const handleSend = (e) => {
+    e.preventDefault();
+    sendMessage(input);
   };
 
   return (
@@ -133,7 +134,7 @@ function Chatbot() {
       <button
         className="chatbot-toggle"
         onClick={() => setIsOpen((previous) => !previous)}
-        aria-label="Open airport assistant chat"
+        aria-label={isOpen ? "Close airport assistant chat" : "Open airport assistant chat"}
         type="button"
       >
         {isOpen ? "✕" : "💬"}
@@ -142,12 +143,16 @@ function Chatbot() {
       {/* Chat window */}
       {isOpen && (
         <div className="chatbot-window">
-
-          {/* Header */}
           <div className="chatbot-header">
-            <div>
-              <h3>✈️ Airport Assistant</h3>
-              <p>Here to help with your journey</p>
+            <div className="chatbot-header-info">
+              <div className="chatbot-avatar">✈️</div>
+              <div>
+                <h3>AI Airport Assistant</h3>
+                <p>
+                  <span className="chatbot-online-dot"></span>
+                  Online • Ready to help
+                </p>
+              </div>
             </div>
 
             <button
@@ -159,7 +164,6 @@ function Chatbot() {
             </button>
           </div>
 
-          {/* Messages */}
           <div className="chatbot-messages">
             {messages.map((message, index) => (
               <div
@@ -176,11 +180,11 @@ function Chatbot() {
               </div>
             ))}
 
-            {/* Typing indicator */}
             {loading && (
               <div className="chat-message assistant-message">
                 <div className="message-bubble typing">
-                  Assistant is typing...
+                  Assistant is typing
+                  <span className="typing-dots">...</span>
                 </div>
               </div>
             )}
@@ -188,14 +192,27 @@ function Chatbot() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input form */}
-          <form
-            className="chatbot-input"
-            onSubmit={handleSend}
-          >
+          {/* Quick questions shown before the first conversation */}
+          {messages.length <= 1 && !loading && (
+            <div className="chatbot-quick-questions">
+              <p>Try asking:</p>
+
+              {quickQuestions.map((question) => (
+                <button
+                  type="button"
+                  key={question}
+                  onClick={() => sendMessage(question)}
+                >
+                  {question}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <form className="chatbot-input" onSubmit={handleSend}>
             <input
               type="text"
-              placeholder="Ask me anything..."
+              placeholder="Ask me about your journey..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               maxLength={1000}
