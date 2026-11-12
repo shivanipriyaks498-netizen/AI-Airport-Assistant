@@ -253,20 +253,21 @@ function App() {
 
       <Routes>
 
+        {/* PUBLIC ROUTES */}
         <Route path="/" element={<Home />} />
 
         <Route path="/login" element={<Login />} />
 
         <Route path="/register" element={<Register />} />
 
-        <Route path="/flights" element={<FlightSearch />} />
-
-        <Route path="/navigation" element={<Navigation />} />
-
         {/* NORMAL USER PROTECTED ROUTES */}
         <Route element={<ProtectedRoute />}>
 
           <Route path="/dashboard" element={<Dashboard />} />
+
+          <Route path="/flights" element={<FlightSearch />} />
+
+          <Route path="/navigation" element={<Navigation />} />
 
           <Route path="/assistant" element={<Assistant />} />
 
