@@ -21,7 +21,7 @@ export const getAirportLocations = async (req, res) => {
       query.airportCode = airportCode.trim().toUpperCase();
     }
 
-    // Filter by facility category
+    // Filter by category
     if (category && category !== "All") {
       query.category = category;
     }
@@ -31,7 +31,7 @@ export const getAirportLocations = async (req, res) => {
       query.terminal = terminal;
     }
 
-    // Search by facility name, area or landmark
+    // Search facility name, area or landmark
     if (search && search.trim()) {
       const safeSearch = search.trim().replace(
         /[.*+?^${}()|[\]\\]/g,
@@ -63,7 +63,7 @@ export const getAirportLocations = async (req, res) => {
     const locations = await AirportLocation.find(query)
       .sort({ category: 1, facilityName: 1 });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       count: locations.length,
       locations
@@ -72,9 +72,10 @@ export const getAirportLocations = async (req, res) => {
   } catch (error) {
     console.error("Navigation search error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: "Unable to retrieve airport locations"
+      message: "Unable to retrieve airport locations",
+      error: error.message
     });
   }
 };
@@ -96,7 +97,7 @@ export const getAirportLocationById = async (req, res) => {
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       location
     });
@@ -104,9 +105,10 @@ export const getAirportLocationById = async (req, res) => {
   } catch (error) {
     console.error("Get location error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: "Unable to retrieve location details"
+      message: "Unable to retrieve location details",
+      error: error.message
     });
   }
 };

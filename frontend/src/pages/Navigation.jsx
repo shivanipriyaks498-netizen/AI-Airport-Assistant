@@ -11,9 +11,8 @@ import {
 
 import API from "../api/axios";
 import toast from "react-hot-toast";
-import IndoorNavigation from "./IndoorNavigation";
 
-const AIRPORT_CENTER = [13.1986, 77.7066];
+const DEFAULT_MAP_CENTER = [20, 0];
 
 const categories = [
   "All",
@@ -43,57 +42,207 @@ const categoryIcons = {
   "Other": "📍"
 };
 
-// Move the map to the latest GPS coordinates.
-function MapUpdater({ position }) {
+// Adjust map view when airport or GPS position changes.
+function MapUpdater({ airportCenter, userPosition }) {
   const map = useMap();
 
   useEffect(() => {
-    if (
-      position &&
-      Number.isFinite(position[0]) &&
-      Number.isFinite(position[1])
-    ) {
-      map.flyTo(position, 17, {
+    if (airportCenter && userPosition) {
+      map.fitBounds(
+        [airportCenter, userPosition],
+        {
+          padding: [40, 40],
+          maxZoom: 13,
+          animate: true
+        }
+      );
+    } else if (airportCenter) {
+      map.flyTo(airportCenter, 13, {
+        animate: true,
+        duration: 1.5
+      });
+    } else if (userPosition) {
+      map.flyTo(userPosition, 15, {
         animate: true,
         duration: 1.5
       });
     }
-  }, [position, map]);
+  }, [airportCenter, userPosition, map]);
 
   return null;
 }
 
 function Navigation() {
+  // Airport facility states
   const [locations, setLocations] = useState([]);
   const [category, setCategory] = useState("All");
   const [search, setSearch] = useState("");
   const [terminal, setTerminal] = useState("All");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState(null);
+
+  // Selected airport states
+  const [selectedAirport, setSelectedAirport] = useState(null);
+  const [nearbyAirports, setNearbyAirports] = useState([]);
+  const [nearbyLoading, setNearbyLoading] = useState(false);
+
+  // Worldwide airport search states
+  const [airportSearch, setAirportSearch] = useState("");
+  const [airportSearchResults, setAirportSearchResults] = useState([]);
+  const [airportSearchLoading, setAirportSearchLoading] = useState(false);
 
   // GPS states
   const [userPosition, setUserPosition] = useState(null);
   const [userAccuracy, setUserAccuracy] = useState(null);
   const [gpsLoading, setGpsLoading] = useState(false);
 
-  // Live aircraft tracking states
+  // Aircraft states
   const [aircraft, setAircraft] = useState([]);
-  const [aircraftLoading, setAircraftLoading] = useState(true);
+  const [aircraftLoading, setAircraftLoading] = useState(false);
   const [aircraftError, setAircraftError] = useState("");
   const [aircraftUpdatedAt, setAircraftUpdatedAt] = useState(null);
 
-  // Fetch live aircraft from OpenSky.
+  // Convert selected airport coordinates to numbers.
+  const airportCenter =
+    selectedAirport &&
+    Number.isFinite(Number(selectedAirport.latitude)) &&
+    Number.isFinite(Number(selectedAirport.longitude))
+      ? [
+          Number(selectedAirport.latitude),
+          Number(selectedAirport.longitude)
+        ]
+      : null;
+
+  // Select an airport.
+  const handleAirportSelect = (airport) => {
+    setSelectedAirport(airport);
+    setAirportSearchResults([]);
+    setAirportSearch("");
+    setSelectedLocation(null);
+
+    setCategory("All");
+    setTerminal("All");
+    setSearch("");
+
+    toast.success(
+      `${airport.name} (${airport.iataCode}) selected`
+    );
+  };
+
+  // Find airports near the user's GPS coordinates.
+  const findNearbyAirports = async (latitude, longitude) => {
+    try {
+      setNearbyLoading(true);
+
+      const response = await API.get("/airports/nearby", {
+        params: {
+          latitude,
+          longitude,
+          radiusKm: 150
+        }
+      });
+
+      const airports = response.data.airports || [];
+
+      setNearbyAirports(airports);
+
+      if (airports.length > 0) {
+        handleAirportSelect(airports[0]);
+
+        toast.success(
+          `${airports.length} nearby airport(s) found`
+        );
+      } else {
+        setSelectedAirport(null);
+
+        toast(
+          "No airports found within 150 km. Search for an airport manually.",
+          {
+            icon: "✈️",
+            duration: 6000
+          }
+        );
+      }
+    } catch (error) {
+      console.error("Nearby airport error:", error);
+
+      toast.error(
+        error.response?.data?.message ||
+        "Unable to find nearby airports"
+      );
+    } finally {
+      setNearbyLoading(false);
+    }
+  };
+
+  // Search airports worldwide by name, city or IATA code.
+  const handleAirportSearch = async (e) => {
+    e.preventDefault();
+
+    if (!airportSearch.trim()) {
+      toast.error("Enter an airport name, city or code");
+      return;
+    }
+
+    try {
+      setAirportSearchLoading(true);
+
+      const response = await API.get("/airports/search", {
+        params: {
+          search: airportSearch.trim()
+        }
+      });
+
+      const results = response.data.airports || [];
+
+      setAirportSearchResults(results);
+
+      if (results.length === 0) {
+        toast.error("No matching airports found");
+      }
+    } catch (error) {
+      console.error("Airport search error:", error);
+
+      toast.error(
+        error.response?.data?.message ||
+        "Unable to search airports"
+      );
+    } finally {
+      setAirportSearchLoading(false);
+    }
+  };
+
+  // Fetch live aircraft around the selected airport.
   useEffect(() => {
     let isActive = true;
 
+    if (!airportCenter || !selectedAirport) {
+      setAircraft([]);
+      setAircraftLoading(false);
+      setAircraftError("");
+      setAircraftUpdatedAt(null);
+
+      return () => {
+        isActive = false;
+      };
+    }
+
     const fetchAircraft = async () => {
       try {
+        if (isActive) {
+          setAircraftLoading(true);
+        }
+
+        const latitude = airportCenter[0];
+        const longitude = airportCenter[1];
+
+        // Search approximately 55 km around the airport.
         const response = await API.get("/aircraft/live", {
           params: {
-            lamin: 12.7,
-            lomin: 77.4,
-            lamax: 13.2,
-            lomax: 77.9
+            lamin: Math.max(-90, latitude - 0.5),
+            lomin: Math.max(-180, longitude - 0.5),
+            lamax: Math.min(90, latitude + 0.5),
+            lomax: Math.min(180, longitude + 0.5)
           }
         });
 
@@ -126,16 +275,76 @@ function Navigation() {
       isActive = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [selectedAirport?.iataCode]);
 
-  // Load airport facilities from MongoDB.
-  const fetchLocations = async () => {
+  // Load facilities belonging to the selected airport.
+  useEffect(() => {
+    let isActive = true;
+
+    const fetchLocations = async () => {
+      if (!selectedAirport) {
+        setLocations([]);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+
+        const response = await API.get("/navigation", {
+          params: {
+            airportCode: selectedAirport.iataCode,
+            category,
+            search,
+            terminal
+          }
+        });
+
+        if (isActive) {
+          setLocations(response.data.locations || []);
+        }
+      } catch (error) {
+        console.error("Navigation API Error:", error);
+        console.error("Error response:", error.response?.data);
+
+        if (isActive) {
+          setLocations([]);
+
+          toast.error(
+            error.response?.data?.message ||
+            error.message ||
+            "Unable to load airport locations"
+          );
+        }
+      } finally {
+        if (isActive) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchLocations();
+
+    return () => {
+      isActive = false;
+    };
+  }, [selectedAirport?.iataCode, category, terminal]);
+
+  // Search airport facilities.
+  const handleSearch = async (e) => {
+    e.preventDefault();
+
+    if (!selectedAirport) {
+      toast.error("Please select an airport first");
+      return;
+    }
+
     try {
       setLoading(true);
 
       const response = await API.get("/navigation", {
         params: {
-          airportCode: "BLR",
+          airportCode: selectedAirport.iataCode,
           category,
           search,
           terminal
@@ -144,56 +353,26 @@ function Navigation() {
 
       setLocations(response.data.locations || []);
     } catch (error) {
-      console.error("Navigation API Error:", error);
-      console.error("Error response:", error.response?.data);
+      console.error("Facility search error:", error);
 
       toast.error(
         error.response?.data?.message ||
-        error.message ||
-        "Unable to load airport locations"
+        "Unable to search facilities"
       );
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchLocations();
-  }, [category, terminal]);
-
-  // Search airport facilities.
-  const handleSearch = (e) => {
-    e.preventDefault();
-    fetchLocations();
-  };
-
-  // Clear filters.
-  const clearFilters = async () => {
+  // Clear facility filters.
+  const clearFilters = () => {
     setCategory("All");
     setTerminal("All");
     setSearch("");
-
-    try {
-      setLoading(true);
-
-      const response = await API.get("/navigation", {
-        params: {
-          airportCode: "BLR",
-          category: "All",
-          terminal: "All",
-          search: ""
-        }
-      });
-
-      setLocations(response.data.locations || []);
-    } catch (error) {
-      toast.error("Unable to reset filters");
-    } finally {
-      setLoading(false);
-    }
+    setSelectedLocation(null);
   };
 
-  // Get the best available live GPS location.
+  // Get GPS location and immediately search nearby airports.
   const locateMe = () => {
     if (!navigator.geolocation) {
       toast.error("Geolocation is not supported by your browser");
@@ -201,172 +380,85 @@ function Navigation() {
     }
 
     if (!window.isSecureContext) {
-      toast.error("Please open the app using its HTTPS address");
+      toast.error("Please open the app using localhost or HTTPS");
       return;
     }
 
     setGpsLoading(true);
 
-    let bestPosition = null;
-    let watchId = null;
-    let timeoutId = null;
-    let finished = false;
+    toast.loading("Detecting your location...", {
+      id: "gps-status"
+    });
 
-    const cleanup = () => {
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
-        watchId = null;
-      }
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+        const accuracy = position.coords.accuracy;
 
-      if (timeoutId !== null) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-    };
+        setUserPosition([latitude, longitude]);
+        setUserAccuracy(accuracy);
 
-    const displayPosition = (position) => {
-      const latitude = position.coords.latitude;
-      const longitude = position.coords.longitude;
-      const accuracy = position.coords.accuracy;
+        toast.success(
+          "Location detected! Finding nearby airports...",
+          {
+            id: "gps-status",
+            duration: 3000
+          }
+        );
 
-      if (
-        !Number.isFinite(latitude) ||
-        !Number.isFinite(longitude) ||
-        !Number.isFinite(accuracy) ||
-        accuracy <= 0
-      ) {
-        return;
-      }
+        try {
+          await findNearbyAirports(latitude, longitude);
+        } finally {
+          setGpsLoading(false);
+        }
+      },
 
-      setUserPosition([latitude, longitude]);
-      setUserAccuracy(accuracy);
+      (error) => {
+        console.error("GPS error:", error);
 
-      console.log("GPS coordinates:", {
-        latitude,
-        longitude,
-        accuracy: `${accuracy.toFixed(1)} metres`
-      });
-    };
+        setGpsLoading(false);
+        toast.dismiss("gps-status");
 
-    const finishLocation = () => {
-      if (finished) return;
-
-      finished = true;
-      cleanup();
-
-      if (bestPosition) {
-        displayPosition(bestPosition);
-
-        const accuracy = bestPosition.coords.accuracy;
-
-        if (accuracy <= 10) {
-          toast.success(
-            `Excellent GPS accuracy: ${accuracy.toFixed(1)} metres`
+        if (error.code === error.PERMISSION_DENIED) {
+          toast.error(
+            "Please allow location permission in browser settings."
           );
-        } else if (accuracy <= 20) {
-          toast.success(
-            `Good GPS accuracy: ${accuracy.toFixed(1)} metres`
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          toast.error(
+            "GPS location unavailable. Please try outdoors."
           );
         } else {
-          toast(
-            `Best available accuracy: ${Math.round(accuracy)} metres. Try outdoors for a better GPS signal.`,
-            {
-              icon: "📍",
-              duration: 6000
-            }
+          toast.error(
+            "Location request timed out. Please try again."
           );
         }
-      } else {
-        toast.error(
-          "No GPS position received. Please try again outdoors."
-        );
-      }
+      },
 
-      setGpsLoading(false);
-    };
-
-    const handlePosition = (position) => {
-      if (finished) return;
-
-      const accuracy = position.coords.accuracy;
-
-      if (!Number.isFinite(accuracy) || accuracy <= 0) {
-        return;
-      }
-
-      // Keep the most accurate reading.
-      if (
-        !bestPosition ||
-        accuracy < bestPosition.coords.accuracy
-      ) {
-        bestPosition = position;
-      }
-
-      // Update the map with the latest live reading.
-      displayPosition(position);
-
-      console.log(
-        "Latest GPS accuracy:",
-        accuracy.toFixed(1),
-        "metres"
-      );
-
-      // Stop early only if accuracy reaches 10 metres or better.
-      if (bestPosition.coords.accuracy <= 10) {
-        finishLocation();
-      }
-    };
-
-    const handleError = (error) => {
-      if (finished) return;
-
-      console.error("GPS error:", error);
-
-      if (bestPosition) {
-        finishLocation();
-        return;
-      }
-
-      finished = true;
-      cleanup();
-      setGpsLoading(false);
-
-      if (error.code === error.PERMISSION_DENIED) {
-        toast.error(
-          "Allow location permission in Chrome settings."
-        );
-      } else if (error.code === error.POSITION_UNAVAILABLE) {
-        toast.error(
-          "GPS signal unavailable. Try outdoors."
-        );
-      } else {
-        toast.error(
-          "GPS request timed out. Please try again."
-        );
-      }
-    };
-
-    watchId = navigator.geolocation.watchPosition(
-      handlePosition,
-      handleError,
       {
         enableHighAccuracy: true,
-        timeout: 65000,
-        maximumAge: 0
+        timeout: 15000,
+        maximumAge: 30000
       }
     );
-
-    // Allow up to 60 seconds to obtain a better GPS reading.
-    timeoutId = setTimeout(() => {
-      finishLocation();
-    }, 60000);
   };
 
-  // Open destination in Google Maps.
+  // Open the selected facility in Google Maps.
   const openGoogleMaps = (location) => {
+    if (!selectedAirport) {
+      toast.error("Please select an airport first");
+      return;
+    }
+
+    const airportDescription = [
+      selectedAirport.name,
+      selectedAirport.city,
+      selectedAirport.country
+    ].filter(Boolean).join(", ");
+
     const destination =
       `${location.facilityName}, ${location.terminal}, ` +
-      "Kempegowda International Airport, Bengaluru";
+      airportDescription;
 
     const url = userPosition
       ? `https://www.google.com/maps/dir/?api=1&origin=${userPosition[0]},${userPosition[1]}&destination=${encodeURIComponent(destination)}&travelmode=walking`
@@ -381,10 +473,12 @@ function Navigation() {
       {/* Hero section */}
       <section className="navigation-hero">
         <p>AI AIRPORT ASSISTANT</p>
+
         <h1>Airport Navigation</h1>
+
         <span>
           Find airport facilities and get simple directions
-          for your journey.
+          for your journey anywhere in the world.
         </span>
       </section>
 
@@ -394,8 +488,8 @@ function Navigation() {
         <h2>🗺️ Outdoor Navigation</h2>
 
         <p>
-          View the airport area, find your current GPS location
-          and track live aircraft.
+          Detect your current location, find nearby airports
+          and explore airport areas around the world.
         </p>
 
         <button
@@ -410,11 +504,11 @@ function Navigation() {
 
         {gpsLoading && (
           <p className="navigation-message">
-            Acquiring GPS signal. Keep your phone outdoors
-            and stationary while we look for a more accurate reading.
+            Detecting GPS coordinates and searching for nearby airports...
           </p>
         )}
 
+        {/* GPS information */}
         {userPosition && (
           <div className="navigation-message">
             <p>
@@ -429,23 +523,17 @@ function Navigation() {
 
             <p>
               <strong>GPS accuracy:</strong>{" "}
-              Approximately {userAccuracy.toFixed(1)} metres
+              Approximately {userAccuracy?.toFixed(1)} metres
             </p>
 
             {userAccuracy <= 10 ? (
-              <p>
-                Excellent GPS signal! Your device reports
-                accuracy within 10 metres.
-              </p>
+              <p>Excellent GPS signal!</p>
             ) : userAccuracy <= 20 ? (
-              <p>
-                Good GPS signal. Keep the phone outdoors
-                for a chance to improve accuracy.
-              </p>
+              <p>Good GPS signal.</p>
             ) : (
               <p>
-                GPS is still approximate. Keep your phone
-                outdoors and try again.
+                GPS is approximate. Try again outdoors
+                for a better signal.
               </p>
             )}
           </div>
@@ -454,16 +542,154 @@ function Navigation() {
         {!userPosition && (
           <p className="navigation-message">
             Press Locate Me and allow location permission
-            to display your current position.
+            to detect nearby airports.
           </p>
+        )}
+
+        {/* Nearby airports */}
+        <div className="navigation-message">
+          <h3>✈️ Nearby Airports</h3>
+
+          {nearbyLoading ? (
+            <p>Searching for nearby airports...</p>
+          ) : nearbyAirports.length > 0 ? (
+            <>
+              <p>
+                Select an airport to explore its map and facilities.
+              </p>
+
+              <select
+                value={selectedAirport?.iataCode || ""}
+                onChange={(e) => {
+                  const airport = nearbyAirports.find(
+                    (item) => item.iataCode === e.target.value
+                  );
+
+                  if (airport) {
+                    handleAirportSelect(airport);
+                  }
+                }}
+              >
+                <option value="">
+                  Choose a nearby airport
+                </option>
+
+                {nearbyAirports.map((airport) => (
+                  <option
+                    key={airport.iataCode}
+                    value={airport.iataCode}
+                  >
+                    {airport.name} ({airport.iataCode}) —{" "}
+                    {airport.distanceKm} km
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : (
+            <p>
+              No nearby airports detected yet. Use Locate Me
+              or search for an airport below.
+            </p>
+          )}
+        </div>
+
+        {/* Worldwide airport search */}
+        <div className="navigation-message">
+          <h3>🌍 Search Airports Worldwide</h3>
+
+          <form
+            onSubmit={handleAirportSearch}
+            className="navigation-search-form"
+          >
+            <input
+              type="text"
+              placeholder="Airport name, city or code (e.g. Heathrow, London, DXB)"
+              value={airportSearch}
+              onChange={(e) => setAirportSearch(e.target.value)}
+            />
+
+            <button
+              type="submit"
+              disabled={airportSearchLoading}
+            >
+              {airportSearchLoading
+                ? "Searching..."
+                : "Find Airport"}
+            </button>
+          </form>
+
+          {airportSearchResults.length > 0 && (
+            <div className="navigation-grid">
+              {airportSearchResults.map((airport, index) => (
+                <div
+                  className="navigation-card"
+                  key={`${airport.iataCode}-${index}`}
+                >
+                  <div className="navigation-card-info">
+                    <h3>{airport.name}</h3>
+
+                    <p>
+                      <strong>Code:</strong> {airport.iataCode}
+                    </p>
+
+                    <p>
+                      <strong>City:</strong>{" "}
+                      {airport.city || "Not available"}
+                    </p>
+
+                    <p>
+                      <strong>Country:</strong>{" "}
+                      {airport.country || "Not available"}
+                    </p>
+
+                    <button
+                      className="directions-btn"
+                      onClick={() => handleAirportSelect(airport)}
+                    >
+                      Select Airport →
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Selected airport */}
+        {selectedAirport && (
+          <div className="navigation-message">
+            <h3>📍 Selected Airport</h3>
+
+            <p>
+              <strong>Name:</strong> {selectedAirport.name}
+            </p>
+
+            <p>
+              <strong>Airport Code:</strong> {selectedAirport.iataCode}
+            </p>
+
+            <p>
+              <strong>City:</strong>{" "}
+              {selectedAirport.city || "Not available"}
+            </p>
+
+            <p>
+              <strong>Country:</strong>{" "}
+              {selectedAirport.country || "Not available"}
+            </p>
+          </div>
         )}
 
         {/* Aircraft information */}
         <div className="navigation-message">
           <h3>✈️ Live Aircraft Tracking</h3>
 
-          {aircraftLoading ? (
-            <p>Loading live aircraft positions...</p>
+          {!selectedAirport ? (
+            <p>Select an airport to load aircraft around it.</p>
+          ) : aircraftLoading ? (
+            <p>
+              Loading aircraft near {selectedAirport.iataCode}...
+            </p>
           ) : (
             <>
               <p>
@@ -484,13 +710,13 @@ function Navigation() {
               )}
 
               <p>
-                Positions refresh automatically every 20 seconds.
+                Aircraft positions refresh automatically every 20 seconds.
               </p>
             </>
           )}
         </div>
 
-        {/* Map */}
+        {/* Outdoor map */}
         <div
           style={{
             width: "100%",
@@ -502,16 +728,55 @@ function Navigation() {
           }}
         >
           <MapContainer
-            center={AIRPORT_CENTER}
-            zoom={13}
-            style={{ height: "100%", width: "100%" }}
+            key={selectedAirport?.iataCode || "world-map"}
+            center={
+              airportCenter ||
+              userPosition ||
+              DEFAULT_MAP_CENTER
+            }
+            zoom={
+              airportCenter
+                ? 13
+                : userPosition
+                ? 15
+                : 3
+            }
+            style={{
+              height: "100%",
+              width: "100%"
+            }}
           >
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
 
-            <MapUpdater position={userPosition} />
+            <MapUpdater
+              airportCenter={airportCenter}
+              userPosition={userPosition}
+            />
+
+            {/* Selected airport marker */}
+            {airportCenter && (
+              <CircleMarker
+                center={airportCenter}
+                radius={12}
+                pathOptions={{
+                  color: "#ffffff",
+                  fillColor: "#16a34a",
+                  fillOpacity: 1,
+                  weight: 3
+                }}
+              >
+                <Popup>
+                  <strong>{selectedAirport.name}</strong>
+                  <p>
+                    Airport Code: {selectedAirport.iataCode}
+                  </p>
+                  <p>{selectedAirport.city}</p>
+                </Popup>
+              </CircleMarker>
+            )}
 
             {/* GPS accuracy circle */}
             {userPosition && userAccuracy !== null && (
@@ -527,7 +792,7 @@ function Navigation() {
               />
             )}
 
-            {/* GPS location marker */}
+            {/* User GPS marker */}
             {userPosition && (
               <CircleMarker
                 center={userPosition}
@@ -551,86 +816,96 @@ function Navigation() {
                   </p>
 
                   <p>
-                    Accuracy: {userAccuracy.toFixed(1)} metres
+                    Accuracy: {userAccuracy?.toFixed(1)} metres
                   </p>
                 </Popup>
               </CircleMarker>
             )}
 
-            {/* Live aircraft markers */}
-            {aircraft.map((plane) => (
-              <CircleMarker
-                key={plane.icao24}
-                center={[plane.latitude, plane.longitude]}
-                radius={7}
-                pathOptions={{
-                  color: "#ffffff",
-                  fillColor: plane.onGround
-                    ? "#16a34a"
-                    : "#f97316",
-                  fillOpacity: 1,
-                  weight: 2
-                }}
-              >
-                <Popup>
-                  <div>
-                    <h3>
-                      ✈️ {plane.callsign || "Unknown Aircraft"}
-                    </h3>
+            {/* Aircraft markers */}
+            {aircraft.map((plane) => {
+              if (
+                !Number.isFinite(Number(plane.latitude)) ||
+                !Number.isFinite(Number(plane.longitude))
+              ) {
+                return null;
+              }
 
-                    <p>
-                      <strong>ICAO24:</strong> {plane.icao24}
-                    </p>
+              return (
+                <CircleMarker
+                  key={plane.icao24}
+                  center={[
+                    Number(plane.latitude),
+                    Number(plane.longitude)
+                  ]}
+                  radius={7}
+                  pathOptions={{
+                    color: "#ffffff",
+                    fillColor: plane.onGround
+                      ? "#16a34a"
+                      : "#f97316",
+                    fillOpacity: 1,
+                    weight: 2
+                  }}
+                >
+                  <Popup>
+                    <div>
+                      <h3>
+                        ✈️ {plane.callsign || "Unknown Aircraft"}
+                      </h3>
 
-                    <p>
-                      <strong>Country:</strong> {plane.originCountry}
-                    </p>
+                      <p>
+                        <strong>ICAO24:</strong> {plane.icao24}
+                      </p>
 
-                    <p>
-                      <strong>Altitude:</strong>{" "}
-                      {plane.altitude !== null
-                        ? `${Math.round(plane.altitude)} metres`
-                        : "Not available"}
-                    </p>
+                      <p>
+                        <strong>Country:</strong> {plane.originCountry}
+                      </p>
 
-                    <p>
-                      <strong>Speed:</strong>{" "}
-                      {plane.velocity !== null
-                        ? `${(plane.velocity * 3.6).toFixed(1)} km/h`
-                        : "Not available"}
-                    </p>
+                      <p>
+                        <strong>Altitude:</strong>{" "}
+                        {plane.altitude !== null
+                          ? `${Math.round(plane.altitude)} metres`
+                          : "Not available"}
+                      </p>
 
-                    <p>
-                      <strong>Heading:</strong>{" "}
-                      {plane.heading !== null
-                        ? `${Math.round(plane.heading)}°`
-                        : "Not available"}
-                    </p>
+                      <p>
+                        <strong>Speed:</strong>{" "}
+                        {plane.velocity !== null
+                          ? `${(plane.velocity * 3.6).toFixed(1)} km/h`
+                          : "Not available"}
+                      </p>
 
-                    <p>
-                      <strong>Status:</strong>{" "}
-                      {plane.onGround ? "On Ground" : "In Air"}
-                    </p>
-                  </div>
-                </Popup>
-              </CircleMarker>
-            ))}
+                      <p>
+                        <strong>Heading:</strong>{" "}
+                        {plane.heading !== null
+                          ? `${Math.round(plane.heading)}°`
+                          : "Not available"}
+                      </p>
+
+                      <p>
+                        <strong>Status:</strong>{" "}
+                        {plane.onGround
+                          ? "On Ground"
+                          : "In Air"}
+                      </p>
+                    </div>
+                  </Popup>
+                </CircleMarker>
+              );
+            })}
           </MapContainer>
         </div>
 
         <p className="navigation-message">
+          Green marker: Selected airport.
           Blue marker: Your GPS location.
           Orange markers: Aircraft in the air.
-          Green markers: Aircraft on the ground.
+          Green aircraft markers: Aircraft on the ground.
         </p>
       </section>
 
-      {/* Indoor navigation */}
-      <section className="navigation-content">
-        <IndoorNavigation />
-      </section>
-
-      {/* Facility search */}
+      {/* Indoor airport facilities */}
       <section className="navigation-search-panel">
         <h2>Where do you want to go?</h2>
 
@@ -645,7 +920,10 @@ function Navigation() {
             onChange={(e) => setSearch(e.target.value)}
           />
 
-          <button type="submit">
+          <button
+            type="submit"
+            disabled={!selectedAirport}
+          >
             Search
           </button>
         </form>
@@ -653,7 +931,15 @@ function Navigation() {
         <div className="navigation-filters">
           <div>
             <label>Airport</label>
-            <input value="Bengaluru (BLR)" readOnly />
+
+            <input
+              value={
+                selectedAirport
+                  ? `${selectedAirport.name} (${selectedAirport.iataCode})`
+                  : "Select an airport first"
+              }
+              readOnly
+            />
           </div>
 
           <div>
@@ -671,9 +957,9 @@ function Navigation() {
         </div>
       </section>
 
-      {/* Facility categories */}
+      {/* Indoor facility categories */}
       <section className="navigation-content">
-        <h2>Explore Airport Facilities</h2>
+        <h2>Explore Indoor Airport Facilities</h2>
 
         <div className="navigation-categories">
           {categories.map((item) => (
@@ -703,21 +989,36 @@ function Navigation() {
           </button>
         </div>
 
-        {loading && (
+        {!selectedAirport && (
+          <div className="navigation-empty">
+            <h3>Select an Airport</h3>
+            <p>
+              Use Locate Me or search worldwide to select
+              an airport and view its facilities.
+            </p>
+          </div>
+        )}
+
+        {selectedAirport && loading && (
           <p className="navigation-message">
-            Loading airport facilities...
+            Loading facilities for {selectedAirport.iataCode}...
           </p>
         )}
 
-        {!loading && locations.length === 0 && (
+        {selectedAirport && !loading && locations.length === 0 && (
           <div className="navigation-empty">
-            <h3>No Locations Found</h3>
-            <p>Try a different search or category.</p>
+            <h3>No Facility Data Available</h3>
+            <p>
+              Facility information has not yet been added
+              for {selectedAirport.name}. Indoor facility
+              information will appear when data is available
+              for this airport.
+            </p>
           </div>
         )}
 
         <div className="navigation-grid">
-          {!loading && locations.map((location) => (
+          {selectedAirport && !loading && locations.map((location) => (
             <div
               className="navigation-card"
               key={location._id}
@@ -756,7 +1057,7 @@ function Navigation() {
           ))}
         </div>
 
-        {/* Directions popup */}
+        {/* Facility details popup */}
         {selectedLocation && (
           <div
             className="navigation-modal-overlay"

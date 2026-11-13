@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import API from "../api/axios";
 import toast from "react-hot-toast";
 
@@ -10,19 +10,144 @@ function FlightSearch() {
     to: ""
   });
 
+  const [airportInputs, setAirportInputs] = useState({
+    from: "",
+    to: ""
+  });
+
+  const [suggestions, setSuggestions] = useState({
+    from: [],
+    to: []
+  });
+
+  const [activeField, setActiveField] = useState(null);
+
   const [flights, setFlights] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
 
-  // Update search inputs
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value.toUpperCase()
-    });
+  // Search worldwide airports as the user types.
+  useEffect(() => {
+    let cancelled = false;
+
+    const search = airportInputs.from.trim();
+
+    if (search.length < 2) {
+      setSuggestions((prev) => ({ ...prev, from: [] }));
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const response = await API.get("/airports/search", {
+          params: { search }
+        });
+
+        if (!cancelled) {
+          setSuggestions((prev) => ({
+            ...prev,
+            from: response.data.airports || []
+          }));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Departure airport search error:", error);
+          setSuggestions((prev) => ({ ...prev, from: [] }));
+        }
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [airportInputs.from]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const search = airportInputs.to.trim();
+
+    if (search.length < 2) {
+      setSuggestions((prev) => ({ ...prev, to: [] }));
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const response = await API.get("/airports/search", {
+          params: { search }
+        });
+
+        if (!cancelled) {
+          setSuggestions((prev) => ({
+            ...prev,
+            to: response.data.airports || []
+          }));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Arrival airport search error:", error);
+          setSuggestions((prev) => ({ ...prev, to: [] }));
+        }
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [airportInputs.to]);
+
+  // Update flight number.
+  const handleFlightNumberChange = (e) => {
+    setFormData((prev) => ({
+      ...prev,
+      flightNumber: e.target.value.toUpperCase()
+    }));
   };
 
-  // Search live flights
+  // Update airport search text.
+  const handleAirportInputChange = (field, value) => {
+    setAirportInputs((prev) => ({
+      ...prev,
+      [field]: value
+    }));
+
+    // Clear the previous airport selection when editing.
+    setFormData((prev) => ({
+      ...prev,
+      [field]: ""
+    }));
+
+    setActiveField(field);
+  };
+
+  // Select an airport from suggestions.
+  const selectAirport = (field, airport) => {
+    const displayName = `${airport.name} — ${airport.city} (${airport.iataCode})`;
+
+    setAirportInputs((prev) => ({
+      ...prev,
+      [field]: displayName
+    }));
+
+    setFormData((prev) => ({
+      ...prev,
+      [field]: airport.iataCode
+    }));
+
+    setSuggestions((prev) => ({
+      ...prev,
+      [field]: []
+    }));
+
+    setActiveField(null);
+
+    toast.success(`${airport.iataCode} selected`);
+  };
+
+  // Search live flights.
   const handleSearch = async (e) => {
     e.preventDefault();
 
@@ -31,17 +156,27 @@ function FlightSearch() {
     const to = formData.to.trim();
 
     if (!flightNumber && !from && !to) {
-      toast.error("Enter a flight number or airport code");
+      toast.error("Enter a flight number or select an airport");
+      return;
+    }
+
+    if (airportInputs.from.trim() && !from) {
+      toast.error("Please select a departure airport from the suggestions");
+      return;
+    }
+
+    if (airportInputs.to.trim() && !to) {
+      toast.error("Please select an arrival airport from the suggestions");
       return;
     }
 
     if (from && !/^[A-Z]{3}$/.test(from)) {
-      toast.error("Departure airport must be a 3-letter code");
+      toast.error("Please select a valid departure airport");
       return;
     }
 
     if (to && !/^[A-Z]{3}$/.test(to)) {
-      toast.error("Arrival airport must be a 3-letter code");
+      toast.error("Please select a valid arrival airport");
       return;
     }
 
@@ -72,7 +207,6 @@ function FlightSearch() {
       } else {
         toast.success(`${results.length} live flight(s) found!`);
       }
-
     } catch (error) {
       console.error("Live flight search error:", error);
 
@@ -81,13 +215,12 @@ function FlightSearch() {
         error.response?.data?.message ||
         "Unable to retrieve live flights"
       );
-
     } finally {
       setLoading(false);
     }
   };
 
-  // Format date and time
+  // Format date and time.
   const formatDateTime = (value) => {
     if (!value) return "Not available";
 
@@ -103,7 +236,7 @@ function FlightSearch() {
     });
   };
 
-  // Get flight status class
+  // Get flight status class.
   const getStatusClass = (status) => {
     const normalizedStatus = status?.toLowerCase();
 
@@ -124,36 +257,106 @@ function FlightSearch() {
     }
   };
 
-  // Display flight status
+  // Display flight status.
   const getStatusLabel = (status) => {
     if (!status) return "Unknown";
 
     return status.charAt(0).toUpperCase() + status.slice(1);
   };
 
+  // Airport autocomplete field.
+  const renderAirportField = (field, label, placeholder) => (
+    <div className="airport-autocomplete" style={{ position: "relative" }}>
+      <label>{label}</label>
+
+      <input
+        type="text"
+        placeholder={placeholder}
+        value={airportInputs[field]}
+        onChange={(e) =>
+          handleAirportInputChange(field, e.target.value)
+        }
+        onFocus={() => setActiveField(field)}
+        onBlur={() => {
+          setTimeout(() => {
+            setActiveField((current) =>
+              current === field ? null : current
+            );
+          }, 150);
+        }}
+        autoComplete="off"
+      />
+
+      {activeField === field &&
+        airportInputs[field].trim().length >= 2 && (
+          <div
+            className="airport-suggestions"
+            style={{
+              position: "absolute",
+              top: "100%",
+              left: 0,
+              right: 0,
+              zIndex: 1000,
+              background: "#ffffff",
+              color: "#222222",
+              border: "1px solid #dddddd",
+              borderRadius: "8px",
+              maxHeight: "240px",
+              overflowY: "auto",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.12)"
+            }}
+          >
+            {suggestions[field].length > 0 ? (
+              suggestions[field].map((airport) => (
+                <button
+                  type="button"
+                  key={`${airport.iataCode}-${airport.name}`}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => selectAirport(field, airport)}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    padding: "12px",
+                    border: "none",
+                    borderBottom: "1px solid #eeeeee",
+                    background: "#ffffff",
+                    color: "#222222",
+                    textAlign: "left",
+                    cursor: "pointer"
+                  }}
+                >
+                  <strong>{airport.name}</strong>
+                  <br />
+                  <small>
+                    {airport.city}, {airport.country} · {airport.iataCode}
+                  </small>
+                </button>
+              ))
+            ) : (
+              <p style={{ padding: "12px", margin: 0 }}>
+                No matching airports found.
+              </p>
+            )}
+          </div>
+        )}
+    </div>
+  );
+
   return (
     <div className="flight-page">
-
-      {/* Page heading */}
       <section className="flight-hero">
         <p>AI AIRPORT ASSISTANT</p>
         <h1>Find Your Flight</h1>
         <span>
-          Search real-time flight information using a
-          flight number or airport codes.
+          Search real-time flight information using a flight number
+          or airports from around the world.
         </span>
       </section>
 
-      {/* Search form */}
       <section className="flight-search-panel">
-
         <h2>Search Live Flights</h2>
 
-        <form
-          className="flight-form"
-          onSubmit={handleSearch}
-        >
-
+        <form className="flight-form" onSubmit={handleSearch}>
           <div>
             <label>Flight Number</label>
             <input
@@ -161,53 +364,34 @@ function FlightSearch() {
               name="flightNumber"
               placeholder="Example: AI101"
               value={formData.flightNumber}
-              onChange={handleChange}
+              onChange={handleFlightNumberChange}
             />
           </div>
 
-          <div>
-            <label>From Airport</label>
-            <input
-              type="text"
-              name="from"
-              placeholder="Example: BLR"
-              value={formData.from}
-              onChange={handleChange}
-              maxLength={3}
-            />
-          </div>
+          {renderAirportField(
+            "from",
+            "From Airport",
+            "Search airport, city or code"
+          )}
 
-          <div>
-            <label>To Airport</label>
-            <input
-              type="text"
-              name="to"
-              placeholder="Example: DEL"
-              value={formData.to}
-              onChange={handleChange}
-              maxLength={3}
-            />
-          </div>
+          {renderAirportField(
+            "to",
+            "To Airport",
+            "Search airport, city or code"
+          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-          >
+          <button type="submit" disabled={loading}>
             {loading ? "Searching..." : "Search Live Flights"}
           </button>
-
         </form>
 
         <p className="airport-hint">
-          BLR – Bengaluru | DEL – Delhi |
-          BOM – Mumbai | HYD – Hyderabad
+          Search worldwide airports by name, city or three-letter IATA code.
+          Select an airport from the suggestions.
         </p>
-
       </section>
 
-      {/* Search results */}
       <section className="flight-results">
-
         <h2>Live Flight Results</h2>
 
         <p className="demo-notice">
@@ -231,9 +415,7 @@ function FlightSearch() {
         )}
 
         <div className="flight-results-grid">
-
           {flights.map((flight, index) => {
-
             const flightNumber =
               flight.flight?.iata ||
               flight.flight?.number ||
@@ -252,9 +434,7 @@ function FlightSearch() {
                 className="flight-card"
                 key={flight.flight?.icao || flightNumber + index}
               >
-
                 <div className="flight-card-top">
-
                   <div>
                     <h3>{airline}</h3>
                     <p>{flightNumber}</p>
@@ -265,15 +445,11 @@ function FlightSearch() {
                   >
                     {getStatusLabel(status)}
                   </span>
-
                 </div>
 
                 <div className="flight-route">
-
                   <div>
-                    <h2>
-                      {departure.iata || "N/A"}
-                    </h2>
+                    <h2>{departure.iata || "N/A"}</h2>
                     <p>
                       {formatDateTime(
                         departure.estimated ||
@@ -289,9 +465,7 @@ function FlightSearch() {
                   </div>
 
                   <div>
-                    <h2>
-                      {arrival.iata || "N/A"}
-                    </h2>
+                    <h2>{arrival.iata || "N/A"}</h2>
                     <p>
                       {formatDateTime(
                         arrival.estimated ||
@@ -300,11 +474,9 @@ function FlightSearch() {
                       )}
                     </p>
                   </div>
-
                 </div>
 
                 <div className="flight-details">
-
                   <p>
                     <strong>Departure Airport:</strong>{" "}
                     {departure.airport || "Not available"}
@@ -334,17 +506,14 @@ function FlightSearch() {
                     <strong>Arrival Gate:</strong>{" "}
                     {arrival.gate || "Not available"}
                   </p>
-
                 </div>
 
                 <p className="demo-label">
                   Live provider data
                 </p>
-
               </div>
             );
           })}
-
         </div>
 
         {!searched && (
@@ -357,9 +526,7 @@ function FlightSearch() {
             </p>
           </div>
         )}
-
       </section>
-
     </div>
   );
 }
