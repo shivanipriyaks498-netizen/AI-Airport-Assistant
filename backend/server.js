@@ -13,6 +13,8 @@ import baggageRoutes from "./routes/baggageRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import aircraftRoutes from "./routes/aircraftRoutes.js";
 import airportRoutes from "./routes/airportRoutes.js";
+import navigationRoutes from "./routes/navigationRoutes.js";
+import indoorNavigationRoutes from "./routes/indoorNavigationRoutes.js";
 
 dotenv.config();
 
@@ -29,6 +31,8 @@ app.use("/api/baggage", baggageRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/aircraft", aircraftRoutes);
 app.use("/api/airports", airportRoutes);
+app.use("/api/navigation", navigationRoutes);
+app.use("/api/indoor-navigation", indoorNavigationRoutes);
 
 // Homepage route
 app.get("/", (req, res) => {
